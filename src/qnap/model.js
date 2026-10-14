@@ -10,7 +10,7 @@
 //             func.ownContent.root.{server_name, serial_number, cpu_usage ("1.2 %"),
 //             total_memory, free_memory (MB), cpu_tempc, sys_tempc,
 //             uptime_day/hour/min/sec, sysfan_count, sysfanN (rpm), sysfanN_stat
-//             (-1: alert), eth_mac1}
+//             (-1: alert), sysfan_failN (1: failed), eth_mac1}
 //   volumes   volumeList.volume[].{volumeValue, volumeLabel, volumeStat (raid5…),
 //             volumeStatus, Progress}, volumeUseList.volumeUse[].{volumeValue,
 //             total_size, free_size (bytes)}
@@ -189,7 +189,10 @@ function fans(root) {
     found.push({
       key: String(index),
       speed,
-      alert: num(text(root, `sysfan${index}_stat`)) === -1,
+      // A failed fan: its status -1, or its failure flag (sysfan_failN) set.
+      alert:
+        num(text(root, `sysfan${index}_stat`)) === -1 ||
+        num(text(root, `sysfan_fail${index}`)) === 1,
     });
   }
   return found;

@@ -63,6 +63,16 @@ test('TS-EC1280U, QTS 4.5.2: system, fans, temperatures, network', () => {
   assert.equal(snapshot.updateKnown, false);
 });
 
+test('a failed fan: its status -1 or its failure flag', () => {
+  const doc = fixture('TS-EC1280U-4.5.2/systemstats.xml');
+  doc.func.ownContent.root.sysfan_fail2 = '1';
+  doc.func.ownContent.root.sysfan3_stat = '-1';
+  assert.deepEqual(
+    parseSnapshot({ sysinfo: doc }).fans.map((fan) => fan.alert),
+    [false, true, true, false],
+  );
+});
+
 test('TS-410, QTS 4.2.3: no CPU temperature, no fan, older layout', () => {
   const snapshot = parseSnapshot({ sysinfo: fixture('TS-410-4.2.3/systemstats.xml') });
   assert.equal(snapshot.cpuTemperature, null);

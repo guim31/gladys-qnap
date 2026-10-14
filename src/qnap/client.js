@@ -166,17 +166,13 @@ export class QnapClient {
         throw new QnapError(ERROR_KINDS.CERTIFICATE, `HTTPS certificate refused (${err.code})`);
       }
       if (NETWORK_CODES.has(err.code) || err.code === undefined) {
-        throw new QnapError(ERROR_KINDS.UNREACHABLE, `No answer (${err.code ?? err.message})`);
+        // Never the message: it may hold the URL, the login query included.
+        throw new QnapError(ERROR_KINDS.UNREACHABLE, `No answer (${err.code ?? err.name})`);
       }
       throw new QnapError(ERROR_KINDS.HTTP, `Request failed (${err.code})`);
     }
     if (response.status === 404) {
       throw new QnapError(ERROR_KINDS.NOT_QNAP, 'HTTP 404: no QTS API here', { status: 404 });
-    }
-    if (response.status >= 500 || response.status === 0) {
-      throw new QnapError(ERROR_KINDS.HTTP, `HTTP ${response.status}`, {
-        status: response.status,
-      });
     }
     if (response.status !== 200) {
       throw new QnapError(ERROR_KINDS.HTTP, `HTTP ${response.status}`, {
