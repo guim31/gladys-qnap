@@ -1,61 +1,236 @@
-# Demo Devices Template
+# QNAP
 
-This is the user documentation of the integration. Gladys re-hosts this file
-and shows a permanent **Documentation** link to it in the Configuration screen
-(in the user's language, with English as the fallback) — it is when
-configuring that the user needs it most. Keep the short onboarding hints in
-the `section` blocks of the manifest `config_schema`; put the long
-step-by-step (screenshots, troubleshooting…) here.
+Follow a QNAP NAS running QTS or QuTS hero from Gladys: CPU, memory,
+temperatures, fans, network, volumes, disks and the UPS it shares, with scenes
+when a volume or a disk needs attention or a firmware update is out, and a
+dashboard widget.
+
+The integration **reads**. The only thing it can do on the NAS is restart it or
+shut it down from a scene, and only once you allowed it in the configuration
+(off by default).
+
+> **Developed without the hardware: feedback welcome.** The integration reads
+> the same web API as the Home Assistant integration and the qnapstats
+> library, checked against real answers of nine QNAP models (QTS 4.2 to 4.5).
+> If something is missing or wrong on yours, please open an issue:
+> <https://github.com/guim31/gladys-qnap/issues>.
+
+Not affiliated with QNAP. Not endorsed or sponsored by QNAP Systems, Inc. QNAP,
+QTS and QuTS hero are trademarks of their owners.
 
 ## What you get
 
-Six demo devices show up after installation: a weather station (real data
-from Open-Meteo), a switch, a dimmable light, a smart plug with power
-metering, a motion sensor and a camera.
+After the configuration, the **Discover** tab proposes the following devices.
+Add the ones you want to follow: nothing is created on your behalf.
+
+### The NAS
+
+- **Online**: 1 while the NAS answers, 0 once it stopped answering.
+- **CPU** and **Memory**: use, in %.
+- **CPU temperature** and **System temperature**, in °C (when the model gives
+  them: some ARM models have no CPU sensor).
+- **Fan 1 (rpm)**, **Fan 2 (rpm)**…: the speed of each system fan. Gladys has
+  no "rpm" unit: the value is a plain number, the name says the unit.
+- **Download** and **Upload** of each network interface (`Download LAN 1`,
+  `Upload LAN 1`…), in Mbit/s.
+- **Uptime**, in days.
+- **Firmware version**, e.g. `5.2.1.3000 build 20261001`.
+- **Update available**: 1 when the NAS offers a newer firmware (checked every
+  6 hours; needs an administrator account, see below).
+
+### Volumes
+
+One device per volume (`DataVol1`…):
+
+- **Space used**, in %;
+- **Capacity** and **Free space**, in GB;
+- **State**: Ready, Rebuilding (a RAID rebuild, resynchronization or
+  migration in progress), Degraded or abnormal;
+- **Alert**: 1 when the state needs attention, 0 otherwise — handy in scenes
+  and in the history.
+
+QTS gives a state code for each volume, and only the code of a ready volume is
+known for sure. Any other code shows as **Degraded or abnormal** and raises
+the alert: missing a degraded RAID is worse than a false alarm. The code is
+written in the logs: please report it with what QTS shows.
+
+### Disks
+
+One device per disk, its model as the model of the device:
+
+- **Temperature**, in °C;
+- **State**: the SMART summary of QTS — Good, Warning or Error;
+- **Alert**: 1 for Warning or Error.
+
+The disks are read every 5 minutes at most, whatever the refresh interval.
+
+### The UPS
+
+When the NAS shares its UPS (see below), one more device:
+
+- **Battery**, in %;
+- **Runtime**, in minutes;
+- **Load**, in %;
+- **On battery**: 1 on battery, 0 on mains;
+- **Low battery**: 1 when the UPS says its battery is low.
+
+## Before you start
+
+### A dedicated account
+
+Create an account on the NAS for Gladys (Control Panel → Privilege → Users),
+with no access to the shared folders and no application.
+
+- **To read**: on recent QTS and QuTS hero (with **Delegated Administration**),
+  give that account the **System Monitoring** role. On older firmwares without
+  delegated administration, the account has to be in the **administrators**
+  group: QTS has no other read-only access to this information.
+- **To check the firmware updates, restart or shut down**: QTS only allows an
+  administrator. With a System Monitoring account, everything else works;
+  **Update available** stays without value and the scene actions are refused.
+
+Log in once to the QTS web interface with that account and accept any
+agreement or wizard QTS shows first: until then, QTS may refuse it.
+
+### 2-step verification
+
+The integration cannot type a 2-step verification code: use an account
+**without** 2-step verification. If your security policy forces it for every
+account, keep the NAS off the Internet, give the Gladys account a long random
+password and no other right, and limit the addresses allowed to reach the NAS
+(Control Panel → Security → Allow/Deny List) to your local network.
+
+### HTTP or HTTPS
+
+- **HTTP** (port 8080 by default): QTS receives the password encoded in base64,
+  which is not encryption. Fine on a home network you trust.
+- **HTTPS** (port 443 by default): the password is encrypted. The certificate
+  QTS generates is self-signed: tick **Accept a self-signed certificate**, or
+  install a certificate Gladys trusts (Let's Encrypt) on the NAS.
+
+### Sharing the UPS
+
+QTS has no documented way to read its UPS page. The integration reads the UPS
+the way other QNAP NAS do: with Network UPS Tools (NUT), port 3493.
+
+1. On the NAS: Control Panel → External Device → UPS, tick **Enable network
+   UPS support** (network UPS master).
+2. Add the IP address of the machine that runs Gladys to the allowed IP
+   addresses.
+
+Nothing else is needed: reading the UPS needs no password. Without it, the
+integration simply finds no UPS.
 
 ## Configuration
 
 1. Open the **Configuration** tab of the integration.
-2. Set the **latitude** and **longitude** the demo weather station should
-   observe (they default to Paris), and pick your temperature unit.
-   The **refresh interval** sets how often the weather station and the
-   plug's power are read: every 5 minutes by default, every minute at most.
-3. Save: the devices appear in the **Discovery** tab, ready to be added.
+2. **NAS address**: its IP address on your network, e.g. `192.168.1.50`: HTTP
+   on port 8080. `https://192.168.1.50` uses HTTPS on port 443; add a port
+   when you changed it (`https://192.168.1.50:5001`).
+3. **User name** and **Password** of the account above. The password is never
+   written in the logs.
+4. **Accept a self-signed certificate**: HTTPS only, see above.
+5. **Refresh interval**: every minute (default), 2 or 5 minutes.
+6. **Read the UPS of the NAS**: on by default; turn it off if the NAS has no
+   UPS.
+7. **Allow scenes to restart or shut down the NAS**: off by default. Leave it
+   off unless a scene really needs it.
+8. **Language of the names and states**: French by default. Gladys does not
+   tell the integration your language: the feature names, the states and the
+   scene variables use this one.
+9. Save, then use **Test the connection**: it reads the NAS and its UPS now
+   and tells what it found, e.g. "NAS: connected, TS-464, QTS 5.2.1.3000 build
+   20261001, 1 volume(s), 4 disk(s), UPS read". Then add the devices from the
+   **Discover** tab.
 
-The **Prefer the local connection** toggle drives the demo plug: it reports
-the channel it actually uses as a badge (local or cloud), with an orange dot
-when it runs degraded (local refused, cloud fallback).
+## Dashboard widget
 
-## Actions
+Add the **QNAP NAS** widget to a dashboard: two gauges (CPU, memory), the
+temperature, then a list where what needs attention comes first (a volume, a
+disk, a fan in alert, the UPS on battery, a firmware update), then each volume
+with its use and free space, the UPS and the uptime. The **Refresh** button
+reads the NAS again. A NAS that does not answer is said in words.
 
-- **Test the weather provider** — performs a live request to Open-Meteo and
-  shows the current temperature and humidity under the button.
-- **Identify a device** — pick one of your devices in the list and it will
-  signal itself (the demo light "blinks" in the logs).
+## Scene triggers
 
-## Scenes
+- **Volume degraded**: a volume goes Rebuilding, Degraded or abnormal; again
+  if it gets worse. Filter: one volume, or every volume (empty). Variables:
+  the NAS, the volume, its state.
+- **Disk alert**: QTS rates a disk Warning or Error; again if it goes from
+  Warning to Error. Filter: one disk, or every disk. Variables: the NAS, the
+  disk, its model, its state, its temperature.
+- **Firmware update available**: the NAS offers a newer QTS or QuTS hero;
+  once per version. Variables: the NAS, the installed version, the new one.
 
-The integration adds its own cards to the scene editor (Gladys 5.1 or
-later), under the **Integrations** category:
+These triggers work for every volume and disk, added to Gladys or not, and
+are not repeated after a restart of Gladys or of the integration. The state
+found at the very first read is recorded without any event.
 
-- **Motion detected** (trigger) — starts the scene when a demo motion sensor
-  sees something move. Optionally pick the sensor and what moved (person,
-  animal); left empty, any detection matches. The following actions can
-  read what moved with `{{triggerEvent.data.target}}`.
-- **Identify a device** (action) — makes the chosen device signal itself.
-  It returns whether the device could signal itself, so the following
-  actions can depend on it.
+## Scene actions
 
-## Dashboard
+- **Restart the QNAP NAS** and **Shut down the QNAP NAS**: refused unless
+  **Allow scenes to restart or shut down the NAS** is ticked, and unless the
+  account is an administrator. A NAS shut down must be turned back on by hand,
+  or by Wake-on-LAN if you enabled it on the NAS.
 
-Add the **Demo status** widget to a dashboard: it shows the live
-temperature of the weather station and the power of the office plug, the
-connection the plug currently uses (orange when degraded) and the observed
-location. Its **Identify the light** button makes the demo light signal
-itself.
+## Scene ideas
+
+- **A degraded RAID**: trigger **Volume degraded** → send a message
+  "{{triggerEvent.data.volume_name}} is {{triggerEvent.data.state}}" to the
+  whole house, and turn a lamp red.
+- **A disk getting tired**: trigger **Disk alert** → message with the disk,
+  its model and temperature, to order a spare before it fails.
+- **Power cut**: trigger "device state" on **On battery** = 1 → message; then,
+  if **Battery** falls under 30 %, the action **Shut down the QNAP NAS** (with
+  the option ticked). QTS can also shut itself down on its own UPS setting:
+  prefer it when it fits.
+- **Updates**: trigger **Firmware update available** → message on Sunday
+  morning with `{{triggerEvent.data.new_version}}`.
+- **A NAS too hot**: trigger "device state" on **System temperature** above
+  50 °C → message.
+
+## How often the NAS is read
+
+At every refresh, three requests to the web API of the NAS (system, volumes,
+network); the disks every 5 minutes; the firmware check every 6 hours; the
+UPS at every refresh (every 10 minutes while the NAS shares none). Only the
+values that changed are sent to Gladys, every value at least every 6 hours.
+
+The integration keeps its session open between two reads and across restarts
+(stored under `/data`, never in the logs): it does not fill the connection
+log of the NAS with a login per minute. A refused password is never tried
+again on its own: QTS blocks an address after a few failed logins. Fix it,
+then save, or use **Test the connection**.
 
 ## Troubleshooting
 
-The integration logs everything it does: check the integration logs from the
-Gladys UI (or `docker logs` on the host) with `LOG_LEVEL=debug` for the full
-detail.
+- **"user name or password refused"**: check them by logging in to the QTS web
+  interface. Too many failed logins may have blocked the address of Gladys:
+  Control Panel → Security → IP Access Protection.
+- **"this account uses 2-step verification"**: use an account without it.
+- **"this account may not read the system"**: give it the System Monitoring
+  role, or put it in the administrators group.
+- **"HTTPS certificate refused"**: tick **Accept a self-signed certificate**.
+- **"no QTS interface at this address"**: check the port (Control Panel →
+  General Settings → System Port; HTTPS port under Web Server/Security).
+- **"does not answer"**: is the NAS on, on the same network, and the address
+  right?
+- **No UPS**: check the network UPS support of the NAS and that the address of
+  the machine running Gladys is allowed. **Test the connection** says
+  "UPS refused (allowed IP addresses?)" when the NAS refuses Gladys.
+- **More detail**: set `LOG_LEVEL=debug` on the integration to see every read
+  in its logs.
+
+## Limits
+
+- One NAS per installation of the integration.
+- Developed without the hardware: the volume state codes other than "ready"
+  are not documented by QNAP. QuTS hero is expected to answer like QTS but was
+  not tested.
+- The read-only role (System Monitoring) does not reach the firmware check;
+  restart and shutdown need an administrator.
+- No control of applications, shared folders, snapshots, Container Station or
+  virtual machines.
+- The disks without SMART (some USB enclosures) and the expansion units may be
+  missing or partial.
+- Gladys has no "rpm" unit: the fan speeds are plain numbers.

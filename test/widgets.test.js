@@ -1,77 +1,121 @@
+// -----------------------------------------------------------------------------
+// The `nas` widget: valid for the core in every state and language (the SDK
+// validator: vocabulary, budget, lengths), the problems first, and the Refresh
+// button that reads the NAS again.
+// -----------------------------------------------------------------------------
+
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { validateWidgetContent } from '@gladysassistant/integration-sdk';
-import { createFakeGladys } from '@gladysassistant/integration-sdk/testing';
-import { buildDiscoveredDevices } from '../src/devices/index.js';
-import { simulateLanSession } from '../src/devices/plug.js';
-import { DEMO_STATUS_WIDGET, WIDGETS, refreshWidgets } from '../src/widgets.js';
-import { normalizeConfig } from '../src/config.js';
+import { HUB_TIMINGS, WIDGET_KEY } from '../src/hub.js';
+import { ACTIONS, MAX_ROWS } from '../src/widgets.js';
+import { FakeQnap, UPS_ON_MAINS } from './helpers/fakeQnap.js';
+import { CONFIG, createWorld, tick } from './helpers/world.js';
 
-const gladys = createFakeGladys();
-const config = normalizeConfig();
-const demoStatus = WIDGETS[DEMO_STATUS_WIDGET];
+const LANGUAGES = ['en', 'fr', 'de', 'es'];
 
-// What the SDK passes to onWidgetGet, plus the config index.js adds.
-const getContent = (cfg = config) =>
-  demoStatus.get(gladys, { settings: {}, language: 'en', units: 'metric', config: cfg });
+async function content(world, language = 'en') {
+  const ack = await world.fake.widgetGet(WIDGET_KEY, { language });
+  assert.equal(ack.success, true, ack.error);
+  return ack.data.content;
+}
 
-test('the demo_status content is rendered exactly as sent', async () => {
-  // [] = nothing the core would drop, truncate or trim to the content budget.
-  assert.deepEqual(validateWidgetContent(await getContent()), []);
-});
+const status = (widget) => widget.components.find((c) => c.type === 'status');
 
-test('the degraded plug connection content is valid too', async () => {
-  simulateLanSession(false);
-  try {
-    const content = await getContent();
-    assert.deepEqual(validateWidgetContent(content), []);
-    const status = content.components.find((component) => component.type === 'status');
-    assert.ok(
-      status.items.some((item) => item.color === 'warning'),
-      'degraded shows a warning',
+test('a NAS that answers: valid, three tiles, the volume, the UPS, a Refresh button', async (t) => {
+  const world = await createWorld({ nas: new FakeQnap({ ups: { ...UPS_ON_MAINS } }) });
+  t.after(() => world.app.stop());
+  for (const language of LANGUAGES) {
+    const widget = await content(world, language);
+    assert.deepEqual(validateWidgetContent(widget), [], language);
+    assert.deepEqual(
+      widget.components.map((c) => c.type),
+      ['text', 'gauge', 'gauge', 'value', 'status', 'button'],
     );
-  } finally {
-    simulateLanSession(true);
   }
-});
-
-test('the live tiles reference features the integration publishes', async () => {
-  const featureIds = new Set(
-    buildDiscoveredDevices(gladys, config).flatMap((device) =>
-      device.features.map((feature) => feature.external_id),
-    ),
-  );
-  const liveTiles = (await getContent()).components.filter((c) => c.device_feature);
-  assert.ok(liveTiles.length > 0, 'the template demonstrates a device-bound tile');
-  for (const tile of liveTiles) {
-    assert.ok(featureIds.has(tile.device_feature), `unknown feature ${tile.device_feature}`);
-  }
-});
-
-test('every button action of the content is handled and answers a short toast', async () => {
-  const buttons = (await getContent()).components.filter((c) => c.type === 'button' && c.action);
-  assert.ok(buttons.length > 0, 'the template demonstrates a widget action');
-  for (const { action } of buttons) {
-    const message = await demoStatus.action(gladys, {
-      actionKey: action.key,
-      params: action.params ?? {},
-      settings: {},
-      config,
-    });
-    assert.ok(message.en, 'the toast carries at least the mandatory `en` text');
-    assert.ok(message.en.length <= 200, 'toasts are capped at 200 characters');
-  }
-});
-
-test('an unknown widget action fails, so the user sees the error', async () => {
-  await assert.rejects(
-    demoStatus.action(gladys, { actionKey: 'unknown', params: {}, settings: {}, config }),
-    /Unknown widget action/,
+  const widget = await content(world, 'fr');
+  assert.equal(widget.components[0].text, 'NAS-TEST-9');
+  assert.equal(widget.components[3].value, 44);
+  assert.deepEqual(
+    status(widget).items.map((item) => [item.label, item.value]),
+    [
+      ['DataVol1', '85 % · 866 Go libres'],
+      ['Onduleur', 'Sur secteur · 100 %'],
+      ['En marche depuis', '2 j 1 h'],
+    ],
   );
 });
 
-test('refreshWidgets nudges every widget', () => {
-  const fresh = createFakeGladys();
-  refreshWidgets(fresh);
-  assert.deepEqual(fresh.fake.widgetRefreshes, Object.keys(WIDGETS));
+test('the problems come first: volume, disk, fan, UPS on battery, firmware', async (t) => {
+  const world = await createWorld({ nas: new FakeQnap({ ups: { ...UPS_ON_MAINS } }) });
+  t.after(() => world.app.stop());
+  world.nas.setVolume({ status: -2 });
+  world.nas.setDisk('0:3', { health: 'Abnormal' });
+  world.nas.setFan(2, 0, true);
+  world.nas.setUps({ ...UPS_ON_MAINS, 'ups.status': 'OB', 'battery.charge': '80' });
+  world.nas.setFirmwareOffer('5.2.1.3000 Build 20261001');
+  world.clock.advance(HUB_TIMINGS.firmwareIntervalMs);
+  await world.fake.widgetAction(WIDGET_KEY, ACTIONS.REFRESH);
+  const widget = await content(world);
+  assert.deepEqual(validateWidgetContent(widget), []);
+  assert.deepEqual(
+    status(widget).items.map((item) => [item.label, item.value, item.color]),
+    [
+      ['DataVol1', 'Degraded or abnormal', 'danger'],
+      ['Disk 3', 'Error', 'danger'],
+      ['Fan 2', 'Alert', 'danger'],
+      ['UPS', 'On battery · 80 % · 31 min', 'warning'],
+      ['Firmware', '5.2.1.3000', 'info'],
+      ['Uptime', '2 d 1 h', 'neutral'],
+    ],
+  );
+});
+
+test('many disks in trouble stay within the budget of rows', async (t) => {
+  const nas = new FakeQnap({ fixtures: { disks: 'TS-1677XU-RP-4.5.2/smartdiskhealth.xml' } });
+  nas.docs.disks = nas.docs.disks.replaceAll(
+    '<Health><![CDATA[OK]]>',
+    '<Health><![CDATA[Warning]]>',
+  );
+  const world = await createWorld({ nas });
+  t.after(() => world.app.stop());
+  const widget = await content(world);
+  assert.deepEqual(validateWidgetContent(widget), []);
+  assert.equal(status(widget).items.length, MAX_ROWS);
+  assert.equal(status(widget).items.at(-1).label, 'Others');
+});
+
+test('a NAS that does not answer says so, and Refresh reads it again', async (t) => {
+  const world = await createWorld();
+  t.after(() => world.app.stop());
+  world.nas.failure = 'down';
+  await tick(world);
+  for (const language of LANGUAGES) {
+    const widget = await content(world, language);
+    assert.deepEqual(validateWidgetContent(widget), []);
+    assert.deepEqual(
+      widget.components.map((c) => c.type),
+      ['text', 'text', 'button'],
+    );
+  }
+  world.nas.failure = null;
+  const ack = await world.fake.widgetAction(WIDGET_KEY, ACTIONS.REFRESH);
+  assert.equal(ack.success, true);
+  assert.equal(ack.data.message.en, 'NAS read again.');
+  assert.equal((await content(world)).components[1].type, 'gauge');
+});
+
+test('not configured: one sentence', async (t) => {
+  const world = await createWorld({ config: { ...CONFIG, password: '' } });
+  t.after(() => world.app.stop());
+  const widget = await content(world, 'de');
+  assert.deepEqual(validateWidgetContent(widget), []);
+  assert.match(widget.components[0].text, /Gib die Adresse/);
+});
+
+test('an unknown widget action is refused', async (t) => {
+  const world = await createWorld();
+  t.after(() => world.app.stop());
+  const ack = await world.fake.widgetAction(WIDGET_KEY, 'reboot');
+  assert.equal(ack.success, false);
 });

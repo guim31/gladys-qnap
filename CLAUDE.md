@@ -32,15 +32,24 @@ pushing.
 
 ```
 index.js                          SDK wiring only: handlers registered before connect()
-src/devices/index.js              registry of the device blueprints + dispatch helpers
-src/devices/<type>.js             one device type per file (buildDevice, onPoll, onSetValue...)
-src/scenes.js                     scene action handlers (manifest `scene_actions`)
-src/widgets.js                    dashboard widget handlers (manifest `widgets`)
+src/app.js                        registerHandlers: every SDK handler, scene actions, widget
+src/hub.js                        the NAS hub: own timer, reads, scene events, states, power
+src/devices.js                    the Gladys devices (NAS, volume, disk, UPS) and their states
+src/alerts.js                     what the scene triggers compare with (pure bookkeeping)
+src/store.js                      /data: trigger tables + session id (owner-only file)
+src/texts.js                      every text sent to Gladys, in en/fr/de/es
+src/widgets.js                    dashboard widget `nas`
 src/config.js                     DEFAULT_CONFIG (mirrors the manifest defaults) + normalization
-src/weather.js                    example driver (Open-Meteo)
+src/qnap/client.js                QTS CGI client: login, session, reads, restart/shutdown
+src/qnap/http.js                  the one HTTP function (self-signed certificate on option)
+src/qnap/xml.js                   small XML reader for the QTS answers
+src/qnap/model.js                 QTS answers -> plain snapshot (states, firmware, UPS)
+src/qnap/nut.js                   the UPS shared by the NAS, over NUT (port 3493)
+scripts/probe.mjs                 read-only probe of a real NAS (no secret printed)
 gladys-assistant-integration.json manifest: name, config_schema, actions, image...
-docs/en.md, docs/fr.md            user documentation, re-hosted by Gladys (mandatory)
-test/                             node --test, against the SDK's fake Gladys (integration-sdk/testing)
+docs/{en,fr,de,es}.md             user documentation, same sections, re-hosted by Gladys
+test/                             node --test, against the SDK's fake Gladys and a fake QNAP
+test/fixtures/qnap/               real QTS answers of nine models (qnapstats, MIT), anonymized
 .github/scripts/release.mjs       release helpers (manifest bump, changelog), tested in test/
 ```
 
@@ -70,8 +79,9 @@ test/                             node --test, against the SDK's fake Gladys (in
   `type: "provider"`: 5.1.0). `test/manifest.test.js` ties the manifest to the
   code (defaults, action, scene and widget handlers): change both sides
   together.
-- **User-facing text** is bilingual (English and French): action messages,
-  manifest texts, and `docs/en.md` / `docs/fr.md`, kept in sync.
+- **User-facing text** exists in English, French, German and Spanish: action
+  messages, manifest texts, feature names, widget, and `docs/en.md`,
+  `docs/fr.md`, `docs/de.md`, `docs/es.md`, kept in sync (`test/i18n.test.js`).
 - **Style.** Prettier formats, ESLint catches mistakes. Comments explain why,
   in English. Tests never touch the network.
 
@@ -233,3 +243,46 @@ long, et sur un « Sie »/« Ihr… » de politesse en allemand. Le store exige 
 - Docs `en`, `fr`, `de`, `es` avec les mêmes sections.
 - Chauffe, ouverture, sécurité : ne rien rendre pilotable « comme un thermostat » ou par un assistant
   vocal quand une erreur serait dangereuse (leçon d'OctoPrint).
+
+## QNAP (propre à ce dépôt)
+
+- **API** : les CGI de l'interface web de QTS, en XML (`src/qnap/xml.js`, pas de dépendance), comme
+  `colinodell/python-qnapstats` (MIT) les lit. Points d'accès et champs en tête de
+  `src/qnap/client.js` et `src/qnap/model.js`. Les fixtures sont les vraies réponses de ses tests
+  (neuf modèles, QTS 4.2 à 4.5), anonymisées : aucune réponse QTS 5 ni QuTS hero.
+- **Connexion** : `POST authLogin.cgi` avec `pwd` = base64 UTF-8 du mot de passe (pas un chiffrement :
+  recommander HTTPS). Certains QTS 4.5.1 répondent au POST sans `authSid` : refaire la même requête
+  en GET (qnapstats). Session expirée = `authPassed 0` sur n'importe quel point d'accès : une seule
+  reconnexion ; un second `authPassed 0` = droit manquant (`PERMISSION`), pas un mot de passe faux.
+- **Ne jamais réessayer sur minuterie** un mot de passe refusé, un compte 2FA ou un droit manquant :
+  QTS bloque l'adresse après quelques échecs (protection de l'accès IP), et chaque essai est une
+  ligne du journal de connexions du NAS. Le SID est gardé sous `/data` (0600) pour la même raison,
+  mais **seulement au premier démarrage** : après un changement de configuration, on se reconnecte
+  pour de vrai (sinon un nouveau mot de passe faux passerait sur l'ancienne session).
+- **2FA** : `need_2sv=1` d'après une doc communautaire, `force_2sv` d'après la doc QNAP 5.1 (non
+  joignable depuis la session). Non vérifié sur matériel.
+- **Droits** : lecture avec le rôle « Surveillance du système » (administration déléguée, QTS
+  récents) ou un administrateur ; `firm_update` et `power_mgmt` exigent un administrateur
+  (supposé : `authPassed 0` sinon, traité comme une part illisible, pas une panne).
+- **États de volume** : seul `volumeStatus` 0 est attesté (volume prêt). `Progress` entre 0 et 99 =
+  opération RAID en cours ; **tout autre code = « Dégradé ou anormal »**, alerte levée et code
+  journalisé : un RAID dégradé manqué est pire qu'une fausse alerte. À affiner avec
+  `scripts/probe.mjs` sur un vrai NAS dégradé.
+- **Disques** : une baie vide n'a pas de `Model` (et `Disk_Status -5`). **Les numéros de série
+  peuvent être masqués et identiques** (`WD-XXX` sur les quatre disques d'un TS-451 réel) : clé par
+  numéro de série seulement s'il est unique dans la réponse, sinon par baie (`slot-0-2`). Une sonde
+  absente vaut `32763` (module) ou vide : ignorée. Lus toutes les 5 minutes au plus.
+- **Réseau** : `QSM40bandwidth` ne répond plus de valeurs depuis QTS 4.5.4 → `chart_func=bandwidth`
+  (format `eth_index_list` + `ethN`). Les octets sont cumulés sur `bandwidth_interval` (5 s).
+- **Firmware** : `newVersion` vide = à jour ; comparer par date de build (`Build AAAAMMJJ`), sinon par
+  version. Lu toutes les 6 heures, déclencheur une fois par version.
+- **Onduleur** : aucun CGI documenté. Lu par NUT (`LIST VAR qnapups`, port 3493, sans login) quand
+  le NAS est « maître UPS réseau » et autorise l'IP de Gladys. Absent = silence (debug), refusé =
+  un avertissement. Redemandé toutes les 10 minutes quand absent.
+- **Ventilateurs** : pas d'unité tr/min dans le cœur : `speed-sensor/integer` sans unité, le nom
+  porte l'unité. Alerte si `sysfanN_stat = -1` ou `sysfan_failN = 1`.
+- **Redémarrer / éteindre** : `sys/sysRequest.cgi?subfunc=power_mgmt&count=0&apply=restart|shutdown`
+  (tommasomarchionni/qnapcli, MIT). Uniquement en action de scène, refusé tant que
+  `allow_power_actions` (défaut `false`) n'est pas coché ; vérifié à chaque appel.
+- Le proxy des sessions de code refuse `eu1.qnap.com`, `download.qnap.com` et `hackmd.io` : la doc
+  officielle de l'authentification QTS n'a pas pu être lue.

@@ -30,6 +30,27 @@ Gladys before reporting a problem.
 
 In scope: the code of this repository and the Docker image it publishes.
 
+What the integration holds, and where:
+
+- **The password of the NAS account** lives in the Gladys configuration only.
+  It is sent to the NAS at login, base64-encoded as QTS expects (use HTTPS to
+  have it encrypted on the network), and never written in the logs, under
+  `/data` or in anything sent to Gladys.
+- **The session id** of the NAS is kept in memory and in
+  `/data/qnap-session.json` (owner-only, bound to the address and the user
+  name), so a restart does not log in again. It is never logged.
+- **`/data/qnap-state.json`** holds what the scene triggers compare with: the
+  serial number of the NAS, the state of each volume and disk, the last
+  firmware version announced. No secret.
+- **Network**: the container talks to the NAS only, on its web port (8080 or
+  443 by default) and, when the UPS option is on, on the NUT port 3493 (read
+  only, no login). A self-signed certificate is only accepted when the user
+  ticks the option. Nothing reaches the Internet.
+- **Commands**: the only requests that change something on the NAS are
+  restart and shutdown, sent only by a scene action and only when the user
+  allowed them in the configuration (off by default).
+
 Out of scope: Gladys Assistant itself (see its
 [security policy](https://github.com/GladysAssistant/Gladys/security/policy)),
-and the third-party services and devices the integration talks to.
+QTS, QuTS hero and the NAS, and the third-party services and devices the
+integration talks to.

@@ -12,44 +12,28 @@ the notes of the version's GitHub Release.
 
 ### Added
 
-- A working example of scene triggers, scene actions and dashboard widgets
-  (Gladys 5.1.0 or later).
-- `CHANGELOG.md`, rolled by the Release workflow.
-- A GitHub Release for every version, with its changelog section as notes: the
-  Gladys Supervision page links each version to the repository's releases.
-- CI runs the tests on Node 22 and 24, and builds the Docker image.
-- Dependabot keeps the npm dependencies and the GitHub Actions up to date.
-- `SECURITY.md` (how to report a vulnerability) and `CLAUDE.md` (project rules
-  for contributors and coding assistants).
-- Manifest tests: `version` matches `package.json`, `docker_image` is tagged
-  with it, descriptions hold 10 to 100 characters, placeholders are
-  multi-language objects.
-- The latitude and longitude fields show an example value as placeholder.
+- Follow a QNAP NAS (QTS, QuTS hero) on the local network through the web API
+  of QTS, with an account of the NAS (a System Monitoring account is enough to
+  read; restart, shutdown and the firmware check need an administrator).
+- The NAS as a device: online, CPU, memory, CPU and system temperatures, the
+  speed of each fan, download and upload of each network interface, uptime,
+  firmware version, firmware update available.
+- One device per volume (space used, capacity, free space, state: ready,
+  rebuilding, degraded or abnormal, alert) and per disk (temperature, SMART
+  state: good, warning, error, alert).
+- The UPS the NAS shares as network UPS master (NUT, port 3493): battery,
+  runtime, load, on battery, low battery.
+- Scene triggers: volume degraded, disk alert, firmware update available.
+- Scene actions: restart and shut down the NAS, refused unless allowed in the
+  configuration (off by default).
+- A dashboard widget: CPU and memory gauges, temperature, then what needs
+  attention, the volumes, the UPS and the uptime, with a Refresh button.
+- The integration reads the NAS on its own timer (every 1, 2 or 5 minutes; the
+  disks every 5 minutes, the firmware check every 6 hours) and keeps its
+  session across restarts, so the NAS does not log a login per minute.
+- HTTPS with an optional self-signed certificate; a refused password, a
+  2-step verification account or a missing right is reported in words and
+  never retried on its own.
+- Every text in English, French, German and Spanish, documentation included.
 
-### Changed
-
-- Node.js 22 or later is required (Node 20 is end-of-life).
-- Integration SDK 0.15.0. The tests now run against the fake Gladys of the
-  SDK, which refuses the payloads Gladys refuses.
-- The refresh interval is one minute minimum, the fastest Gladys polls a
-  device. The plug's power is only sent when it changes, and every 30
-  minutes otherwise.
-
-### Fixed
-
-- Gladys refused the devices of the Discovery tab: the weather station and
-  the plug declared their poll frequency in seconds instead of one of the
-  values Gladys accepts, and were never polled. They now poll every minute,
-  and the readings follow the refresh interval of the configuration.
-
-- The release commit no longer fails `npm run format:check`: the Release
-  workflow updates the manifest `version` and `docker_image` in place instead
-  of re-printing the whole file with `jq`.
-- The integration can write to `/data`: the image creates the directory owned
-  by the `node` user, a new Docker volume was owned by root.
-- A sub-container running the integration's own image follows it to the new
-  tag at each release, as well as in the manifest of the build summary: it kept
-  the previous tag, which may not exist on the registry. Sub-containers on a
-  third-party image (a broker, a database...) keep theirs.
-
-[Unreleased]: https://github.com/GladysAssistant/integration-template-js/commits/main
+[Unreleased]: https://github.com/guim31/gladys-qnap/commits/main
