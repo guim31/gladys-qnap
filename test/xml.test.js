@@ -59,7 +59,8 @@ test('what is not a QTS answer is refused with an XmlError', () => {
 test('every real answer of the fixtures parses', () => {
   const base = new URL('./fixtures/qnap/', import.meta.url);
   let count = 0;
-  for (const model of readdirSync(base)) {
+  const models = readdirSync(base, { withFileTypes: true }).filter((entry) => entry.isDirectory());
+  for (const { name: model } of models) {
     for (const file of readdirSync(new URL(`${model}/`, base)).filter((f) => f.endsWith('.xml'))) {
       const doc = parseQDoc(readFileSync(new URL(`${model}/${file}`, base), 'utf8'));
       assert.equal(text(doc, 'authPassed'), '1', `${model}/${file}`);
