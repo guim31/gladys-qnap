@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-14
+
 ### Added
 
 - Follow a QNAP NAS (QTS, QuTS hero) on the local network through the web API
@@ -36,4 +38,5 @@ the notes of the version's GitHub Release.
   never retried on its own.
 - Every text in English, French, German and Spanish, documentation included.
 
-[Unreleased]: https://github.com/guim31/gladys-qnap/commits/main
+[Unreleased]: https://github.com/guim31/gladys-qnap/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/guim31/gladys-qnap/releases/tag/v1.0.1

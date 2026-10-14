@@ -8,8 +8,8 @@
     "de": "Überwache ein QNAP-NAS (QTS, QuTS hero): Prozessor, Speicher, Temperaturen, Volumes, Festplatten.",
     "es": "Supervise un NAS QNAP (QTS, QuTS hero): procesador, memoria, temperaturas, volúmenes, discos."
   },
-  "version": "1.0.0",
-  "docker_image": "ghcr.io/guim31/gladys-qnap:1.0.0",
+  "version": "1.0.1",
+  "docker_image": "ghcr.io/guim31/gladys-qnap:1.0.1",
   "gladys_version": ">=5.1.0",
   "cover_image": "https://raw.githubusercontent.com/guim31/gladys-qnap/main/cover.png",
   "categories": ["network"],
